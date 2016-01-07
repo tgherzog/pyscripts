@@ -18,7 +18,7 @@ import requests
 import sys
 import re
 from docopt import docopt
-from pyquery import PyQuery as pq
+from pyquery import PyQuery
 
 if __name__ == '__main__':
   config = docopt(__doc__, version="v0.1")
@@ -218,9 +218,9 @@ if config['--update'] == True:
     for week in range(1,int(config['WEEK'])+1):
         print "Processing week {0}".format(week)
         url = 'http://www.nfl.com/scores/2015/REG{0}'.format(week)
-        d = pq(url)
+        d = PyQuery(url)
         for elem in d('div.scorebox-wrapper'):
-            i = pq(elem)
+            i = PyQuery(elem)
             (aname,ascore) = (i('.away-team .team-name a').text(), i('.away-team .total-score').text())
             (bname,bscore) = (i('.home-team .team-name a').text(), i('.home-team .total-score').text())
 
