@@ -1,5 +1,15 @@
 #!/usr/bin/python
 
+# This is a script for calculating a rough estimate of indicators in
+# the open data catalog relevant to "Africa"
+
+# 1. Start by querying the catalog API to get a list of all datasets
+# 2. Exclude datasets that don't have MENA or SSA in the economy coverage field
+# 3. Exclude datasets with no sourceid (not in the API)
+# 4. Call data API to retrieve number of indicators in the dataset
+
+# Obviously very rough, doesn't address datasets not in the API, and may have some double counting
+
 import sys
 import re
 import requests
