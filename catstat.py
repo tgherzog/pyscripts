@@ -100,12 +100,12 @@ for dataset in json:
         duedate = add_months(lastRev, 3+1).replace(day=1)
     # elif f == 'annually' or f == 'annual +':
     elif f == 'annually':
-        duedate = add_months(lastRev + datetime.timedelta(365), 1) - datetime.timedelta(1)
+        duedate = add_months(lastRev + datetime.timedelta(365), 1).replace(day=1) - datetime.timedelta(1)
     elif f == 'biannually':
-        duedate = add_months(lastRev + datetime.timedelta(365 * 2), 1) - datetime.timedelta(1)
+        duedate = add_months(lastRev + datetime.timedelta(365 * 2), 1).replace(day=1) - datetime.timedelta(1)
     # elif f == 'triannually' or f == 'no fixed schedule':
     elif f == 'triannually':
-        duedate = add_months(lastRev + datetime.timedelta(365 * 3), 1) - datetime.timedelta(1)
+        duedate = add_months(lastRev + datetime.timedelta(365 * 3), 1).replace(day=1) - datetime.timedelta(1)
     elif f == 'archived' or f == 'no further updates planned':
         duedate = 'never'
     else:
