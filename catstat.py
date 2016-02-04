@@ -2,7 +2,8 @@
 
 """
 
-Compare modification dates for the WBG data catalog and an external Socrata catalog
+Report status of datasets in the catalog by comparing the last revision date to the update frequency
+to ascertain which datasets are "stale"
 
 Usage:
   catstat.py
