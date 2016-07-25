@@ -4,12 +4,13 @@
 Crawls a site and reports a list of all links
 
 Usage:
-  linklist.py [--depth=NUM --print-links --print-images] URL
+  linklist.py [--depth=NUM --print-links --print-images --host=HOST] URL
 
 Options:
-  --depth:          maximum recursive depth, 0 disables recursive scanning  [default: 0]
-  --print-links:    print hyperlinks only
-  --print-images:   print image links only
+  --depth:           maximum recursive depth, 0 disables recursive scanning  [default: 0]
+  --print-links:     print hyperlinks only
+  --print-images:    print image links only
+  --host:            only print links from HOST
 
 """
 
@@ -77,10 +78,13 @@ def harvest(url, origUrl, srcUrl):
     for img in soup.findAll('img'):
       src = img.get('src')
       if src is not None:
-        if images.get(src) is None:
-            images[src] = [url]
-        else:
-            images[src].append(url)
+	parts = urlparse.urlparse(src)
+	host = base_url_parts.netloc if parts.netloc == '' else parts.netloc
+	if config['--host'] is None or config['--host'].lower() == host:
+	  if images.get(src) is None:
+	      images[src] = {url: True}
+	  else:
+	      images[src][url] = True
 
     # harvest links
     for link in soup.findAll('a'):
@@ -100,10 +104,11 @@ def harvest(url, origUrl, srcUrl):
         parts = parts._replace(netloc=parts.netloc.lower())
 
         full_link = urlparse.urlunparse(parts)
-        if links.get(full_link) is None:
-          links[full_link] = [url]
-        else:
-          links[full_link].append(url)
+	if config['--host'] is None or config['--host'].lower() == parts.netloc:
+	  if links.get(full_link) is None:
+	    links[full_link] = {url: True}
+	  else:
+	    links[full_link][url] = True
 
         if depth < int(config['--depth']):
             if parts.scheme == 'http' or parts.scheme == 'https':
@@ -118,9 +123,13 @@ harvest(base_url, base_url, '(TOP)')
 if config['--print-links']:
   for url,sources in links.iteritems():
     # print "  %4d %s" % (count, url)
-    print "%s %s" % (url, ", ".join(sources))
+    print url
+    for src,count in sources.iteritems():
+      print "  %s" % (src)
 
 if config['--print-images']:
   for url,sources in images.iteritems():
     # print "  %4d %s" % (count, url)
-    print "%s %s" % (url, ", ".join(sources))
+    print url
+    for src,count in sources.iteritems():
+      print "  %s" % (src)
