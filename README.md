@@ -22,6 +22,17 @@ for line in sys.stdin:
 
 ````
 
+### Reading the command line ###
+
+**Note:** in most cases it's easier to process the command line with the [docopt][docopt] library.
+````
+import sys
+
+first,second = sys.argv[1:3]
+
+````
+
+
 ### Regex ###
 
 ````
@@ -32,3 +43,6 @@ if m is not None:
   matching_string = m.group(1)
 
 ````
+
+
+[docopt]: http://docopt.org
