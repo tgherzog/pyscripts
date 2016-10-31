@@ -45,10 +45,12 @@ for elem in items:
   date  = elem.pubDate.cdata.encode('ascii', errors='replace')
 
   # transformations and reformatting
+  # replace John Smith with J. Smith
   m = re.search('^(\w+)\s+(\w+)$', auth)
   if m is not None:
     auth = m.group(1)[0:1] + '. ' + m.group(2)
 
+  # Replace ISO-style date with 'mmm dd, yyyy'
   m = re.search('^(\w+), (\d+) (\w+) (\d+) ', date)
   if m is not None:
     date = m.group(3) + ' ' + m.group(2) + ', ' + m.group(4)
