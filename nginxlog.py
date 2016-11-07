@@ -101,6 +101,10 @@ for fref in options['FILE']:
     fd = open(fref, 'r')
 
   for row in fd:
+    # try to make sure we start with a timestamp: some messages may contain odd carriage returns
+    if re.match('^\d{4}', row) == None:
+      continue
+
     # row = row.rstrip('\r\n')
     d,t = row.split()[0:2]
     d2 = d.split('/')
