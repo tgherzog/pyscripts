@@ -32,6 +32,10 @@ import urllib
 
 from docopt import docopt
 
+def _len_(obj):
+
+  return len(obj)
+
 def fetch(url, config):
 
   for i in range(0, int(config['--retry'])):
@@ -71,9 +75,16 @@ def test(url, config):
 
     try:
       data1 = resp1.json()
-      size1 = data1[0]['total']
+      size1 = 0
+      # for this first instance, we're actually looking for a count of non-empty values
+      if data1[0]['total'] > 0:
+        for elem in data1[1]:
+          if _len_(elem['value']) > 0:
+            size1 = size1 + 1
+      
     except:
-      print "JSON ERROR: " + url
+      print "JSON ERROR: {0}".format(url), elem
+      raise
       return
 
     resp2 = fetch(url2, config)
@@ -89,7 +100,7 @@ def test(url, config):
       data2 = resp2.json()
       size2 = data2[0]['total']
     except:
-      print "JSON ERROR: " + url2
+      print "JSON ERROR: {0}".format(url2)
 
     print "{0:<6} {1:<12} {3:<10} {2}".format(resp2.status_code, resp2.reason, url, 'MATCH' if (size1>0) == (size2>0) else 'NO MATCH')
     return
@@ -101,14 +112,14 @@ def test(url, config):
     print "NO RESPONSE: " + url
     return
 
-  len  = response.headers.get('content-length') or -1
+  size = response.headers.get('content-length') or -1
   code = response.status_code
   msg  = response.reason
 
   type = response.headers.get('content-type') or ""
   type = type.split(';')[0]
 
-  print "{0:<6} {1:<12} {2:<20} {3:>8} {4}".format(code, msg, type, len, url)
+  print "{0:<6} {1:<12} {2:<20} {3:>8} {4}".format(code, msg, type, size, url)
 
 
 if __name__ == '__main__':
