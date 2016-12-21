@@ -5,12 +5,16 @@
 Diagnostic program to test and report country/indicator combinations from subnational API
 
 Usage:
-  apitest.py URL [--countries COUNTRY_LIST] [--indicators INDICATOR_LIST]
+  apitest.py URL [--mrv] [--retry COUNT] [--countries COUNTRY_LIST] [--indicators INDICATOR_LIST]
 
 Options:
   -c, --countries COUNTRY_LIST     List of ISO3 country codes, comma-separated. Will use the list provided by the API if missing
 
   -i, --indicators INDICATOR_LIST  List of indicator codes, comma-separated. Will use the list provided by the API if missing
+
+  -m, --mrv                        MRV test: make sure MRNEV variant returns data consistent with the ordinary variant
+
+  -r, --retry COUNT                Retry count: 0 if omitted (e.g. --retry=3 makes 3 attempts)
 
 Examples:
 
@@ -22,11 +26,75 @@ Examples:
 import sys
 import re         # regex
 import requests   # HTTP requests
+import urlparse
+import urllib
+
 
 from docopt import docopt
 
-def test(url):
+def fetch(url, config):
 
+  for i in range(0, int(config['--retry'])):
+    try:
+      response = requests.get(url)
+      return response
+    except:
+      continue
+
+  return None
+
+def test(url, config):
+
+  if config['--mrv']:
+    parts = urlparse.urlparse(url)
+    q     = urlparse.parse_qs(parts.query)
+    q['format'] = 'json'
+
+    if 'MRNEV' in q:
+      del q['MRNEV']
+
+    parts = parts._replace(query=urllib.urlencode(q, doseq=True))
+    url = urlparse.urlunparse(parts)
+
+    q['MRNEV'] = 1
+    parts = parts._replace(query=urllib.urlencode(q, doseq=True))
+    url2 = urlparse.urlunparse(parts)
+
+    resp1 = fetch(url, config)
+    if resp1 is None:
+      print "NO RESPONSE: " + url
+      return
+
+    if resp1.status_code != 200:
+      print "{0:<6} {1:<12} {3:<10} {2}".format(resp1.status_code, resp1.reason, url, '--')
+      return
+
+    try:
+      data1 = resp1.json()
+      size1 = data1[0]['total']
+    except:
+      print "JSON ERROR: " + url
+      return
+
+    resp2 = fetch(url2, config)
+    if resp2 is None:
+      print "NO RESPONSE: " + url2
+      return
+
+    if resp2.status_code != 200:
+      print "{0:<6} {1:<12} {3:<10} {2}".format(resp2.status_code, resp2.reason, url2, '--')
+      return
+
+    try:
+      data2 = resp2.json()
+      size2 = data2[0]['total']
+    except:
+      print "JSON ERROR: " + url2
+
+    print "{0:<6} {1:<12} {3:<10} {2}".format(resp2.status_code, resp2.reason, url, 'MATCH' if (size1>0) == (size2>0) else 'NO MATCH')
+    return
+
+      
   try:
     response = requests.get(url)
   except:
@@ -45,6 +113,8 @@ def test(url):
 
 if __name__ == '__main__':
   config = docopt(__doc__, version="version " + "0.1")
+  if config['--retry'] is None:
+    config['--retry'] = 1
 
   url = config['URL']
   if re.match('https?://\S+', url) == None:
@@ -80,22 +150,23 @@ if __name__ == '__main__':
 # print config
 # if 'countries' in vars(): print countries
 # if 'indicators' in vars(): print indicators
+# sys.exit(0)
 
 if country_test and indicator_test:
   for c in countries:
     for i in indicators:
       kv = {'country': c, indicator_key: i}
-      test( url.format(**kv) )
+      test( url.format(**kv), config )
 
 elif country_test:
   for c in countries:
     kv = {'country': c}
-    test( url.format(**kv) )
+    test( url.format(**kv), config )
 
 elif indicator_test:
   for i in indicators:
     kv = {indicator_key: i}
-    test( url.format(**kv) )
+    test( url.format(**kv), config )
 
 else:
-  test(url)
+  test(url, config)
