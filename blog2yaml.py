@@ -40,13 +40,13 @@ if len(items) > options['--count']:
 data = []
 for elem in items:
   title = elem.title.cdata
-  auth  = elem.dc_creator.cdata.encode('ascii', errors='replace')
+  auth  = elem.dc_creator.cdata
   link  = elem.link.cdata.encode('ascii', errors='replace')
   date  = elem.pubDate.cdata.encode('ascii', errors='replace')
 
   # transformations and reformatting
   # replace John Smith with J. Smith
-  m = re.search('^(\w+)\s+(\w+)$', auth)
+  m = re.search('^(\S+)\s+(\S+)$', auth)
   if m is not None:
     auth = m.group(1)[0:1] + '. ' + m.group(2)
 
