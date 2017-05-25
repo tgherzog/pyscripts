@@ -20,6 +20,9 @@ from docopt import docopt
 
 url = "http://api.worldbank.org/v2/datacatalog?per_page=800&format=json"
 
+reload(sys)
+sys.setdefaultencoding('utf8')
+
 
 def add_months(src, months):
 
