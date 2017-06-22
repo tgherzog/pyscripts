@@ -5,7 +5,7 @@
 968test.py: a script for testing http://github.com/wiredcraft/data.worlbank.org/issues/968 - algorithm for related indicators
 
 Usage:
-  urltest.py [--limit=LIMIT] CETS_CODE
+  968test.py [--limit=LIMIT] CETS_CODE
 
 Options:
   --limit=LIMIT:   Maximum number of matches [default: 8]
