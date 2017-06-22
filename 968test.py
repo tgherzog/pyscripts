@@ -85,7 +85,7 @@ def match_mode(cets, i):
 
 
 
-# Load an indicator array - previously saved from API call
+# Load an indicator array
 indicators = load_indicators()
 cets = config['CETS_CODE']
 matches = {}
@@ -93,6 +93,7 @@ matches = {}
 for i in range(0,6):
   partA = match_mode(cets, i).upper()
 
+  # We make up to 6 passes to achieve at least the desired number of related indicators, using these patterns
   if i == 0:
     pattern = "A.B.C"
   elif i == 1:
@@ -107,6 +108,7 @@ for i in range(0,6):
     pattern = "A'"
 
   for ind in indicators:
+    # skip matches against ourself or previously matched indicators
     if cets == ind['id'] or matches.get(ind['id']):
       continue
 
@@ -115,5 +117,6 @@ for i in range(0,6):
       print "%-8s  %-20s  %s" % (pattern, ind['id'], ind['name'])
       matches[ ind['id'] ] = True
 
+  # bail once we have at least the number of desired matches
   if len(matches) >= int(config['--limit']):
     break
