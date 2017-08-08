@@ -64,7 +64,7 @@ for key,row in data['projects'].iteritems():
     value = int(row['totalamt'].replace(',',''))
     if config['--detail'] is not None:
         if year == int(config['--detail']):
-            print "{}  {:>4d}  {}  {:>12,d}".format(row['id'], year, cDate.strftime("%Y-%m-%d"), value)
+            print "{}  {:>4d}  {}  {:>14,d}".format(row['id'], year, cDate.strftime("%Y-%m-%d"), value)
 
     elif result.get(year):
         result[year]['count'] += 1
@@ -76,4 +76,4 @@ if config['--detail'] is None:
     years = result.keys()
     years.sort()
     for i in years:
-        print "{:>4d}    {:>5d}    {:>12,d}".format(i, result[i]['count'], result[i]['total'])
+        print "{:>4d}    {:>5d}    {:>14,d}".format(i, result[i]['count'], result[i]['total'])
