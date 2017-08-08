@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/local/bin/python
 
 """
 Queries the World Bank projects API and returns summary data, as reported on the
