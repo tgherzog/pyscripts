@@ -55,11 +55,15 @@ else:
 
 url = base + '&fl=countrycode,boardapprovaldate,totalamt&%s=%s&frmYear=1947&toYear=%d' % (key, value, date.today().year)
 
+print "Querying {}".format(url)
+
 response = requests.get(url)
 data = response.json()
 result = {}
 for key,row in data['projects'].iteritems():
     cDate = datetime.strptime(row['boardapprovaldate'], '%Y-%m-%dT%H:%M:%SZ')
+
+    # determine the fiscal year, starting July 1st
     year = cDate.year if cDate.month < 7 else cDate.year+1
     value = int(row['totalamt'].replace(',',''))
     if config['--detail'] is not None:

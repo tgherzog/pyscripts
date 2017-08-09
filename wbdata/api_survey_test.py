@@ -28,7 +28,8 @@ code_mapping = {
 
 base = 'http://microdata.worldbank.org/index.php/api/catalog/search/format/json/?sort_by=proddate&sort_order=desc&country[]={}'
 
-response = requests.get('http://api.worldbank.org/v2/country/{}?format=json'.format(config['CODE']))
+url = 'http://api.worldbank.org/v2/country/{}?format=json'.format(config['CODE'])
+response = requests.get(url)
 data = response.json()
 if len(data) == 1:
   sys.stderr.write(data[0]['message'][0]['value'] + '\n')
@@ -37,6 +38,7 @@ if len(data) == 1:
 value = code_mapping.get(data[1][0]['iso2Code'], data[1][0]['name'])
 url = base.format(value)
 
+print "Querying {}".format(url)
 response = requests.get(url)
 data = response.json()
 n = 0
@@ -44,4 +46,5 @@ for row in data['rows']:
   title   = row['titl']
   link    = 'http://microdata.worldbank.org/index.php/catalog/' + str(row['id'])
   updated = datetime.fromtimestamp(int(row['created'])).strftime('%Y-%m-%d')
-  print '{}  {:<60s}  {}'.format(updated, title, link)
+  proddate = row['proddate']
+  print '{}  {}  {:<60s}  {}'.format(updated, proddate, title, link)

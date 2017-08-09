@@ -66,6 +66,7 @@ while len(tasks) > 0:
   key = tasks.pop(0)
   setup = tasks.pop(0)
   url = base.format(key)
+  print "Querying {}: {}".format(setup['title'], url)
   response = requests.get(url)
   data = response.json()
   for row in data['data']:
