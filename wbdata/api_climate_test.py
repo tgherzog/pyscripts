@@ -34,8 +34,7 @@ if len(data) == 1:
 
 value = code_mapping.get(data[1][0]['iso2Code'], data[1][0]['id'])
 
-url = base.format('(tas|pr)', value)
-print "Querying {}".format(url)
+print 'Querying ' + base.format('(tas|pr)', value)
 
 url = base.format('tas', value)
 response = requests.get(url)
@@ -64,5 +63,5 @@ month = 0
 for elem in data:
     tmp = '--' if elem[0] is None else "{:8.3f}".format(elem[0])
     pre = '--' if elem[1] is None else "{:8.3f}".format(elem[1])
-    print "{:>5}  {:>10}  {:>10}".format(month+1, tmp, pre)
+    print "{:<5}  {:>10}  {:>10}".format(month+1, tmp, pre)
     month += 1
