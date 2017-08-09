@@ -15,6 +15,9 @@ import requests
 import sys
 from datetime import date, datetime
 
+reload(sys)
+sys.setdefaultencoding('utf8')
+
 config = docopt(__doc__, version='version ' + '0.1')
 
 
