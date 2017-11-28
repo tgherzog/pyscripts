@@ -15,3 +15,9 @@ Note that these scripts employ either the iso2, iso3 or country codes from the d
 in many cases there are exceptions in the target API that need to be corrected for. Most scripts
 include a `code_mapping` dict that documents the necessary mappings. This may need updates from
 time to time as various APIs make changes.
+
+**config_check.py**
+
+This script is designed to run sanity checks on config files, for instance, to look for indicators
+that may have been removed from the API. Currently it only works on indicator_groups.yaml, but the
+intent is to add other sanity checks on other files in the future
