@@ -14,6 +14,7 @@ from docopt import docopt
 import requests
 import sys
 from datetime import date, datetime
+from dateutil.parser import parse as date_parser
 
 reload(sys)
 sys.setdefaultencoding('utf8')
@@ -45,9 +46,10 @@ print "Querying {}".format(url)
 response = requests.get(url)
 data = response.json()
 n = 0
-for row in data['rows']:
-  title   = row['titl']
-  link    = 'http://microdata.worldbank.org/index.php/catalog/' + str(row['id'])
-  updated = datetime.fromtimestamp(int(row['created'])).strftime('%Y-%m-%d')
-  proddate = row['proddate']
-  print '{}  {}  {:<60s}  {}'.format(updated, proddate, title, link)
+for row in data['result']['rows']:
+  title      = row['title']
+  link       = row['url']
+  updated    = date_parser(row['created']).strftime('%Y-%m-%d')
+  proddate   = row['year_start']
+  author_org = row['authoring_entity']
+  print '{}  {}  {:<80s}  {}'.format(updated, proddate, title, author_org, link)
