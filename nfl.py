@@ -48,8 +48,17 @@ class NFLTeam():
         self.conf = elem['conf']
         self.host = host
 
-        self.division = host.divs_[self.div].copy()
-        self.conference = host.confs_[self.conf].copy()
+    @property
+    def division(self):
+        '''Return array of teams in this team's division
+        '''
+        return self.host.divs_[self.div]
+
+    @property
+    def conference(self):
+        '''Return array of teams in this team's conference
+        '''
+        return self.host.confs_[self.conf]
 
     def __repr__(self):
         s = '{}: {} ({})\n'.format(self.code, self.name, self.div)
@@ -114,7 +123,7 @@ class NFL():
         if i in self.teams_:
             return NFLTeam(i, self)
 
-    def load(self, path):
+    def load(self, path='NFLData.xlsx'):
         ''' Loads data from the specified excel file
 
             path:   path to Excel file
@@ -228,7 +237,23 @@ class NFL():
         wb.save(path)
 
     def set(self, wk, **kwargs):
+        ''' Set the final score(s) for games in a given week. You can use this to create
+            hypothetical outcomes and analyze the effect on team rankings. Scores
+            are specified by team code and applied to the specified week's schedule.
+            If the score is specified for only one team in a game, the score of the other
+            team is assumed to be zero if not previously set.
 
+            wk:         week number
+            **kwargs    dict of team codes and final scores
+
+            # typical example
+            set(7, MIN=17, GB=10)
+
+            The above will set the score for the MIN/GB game in week 7 if
+            MIN and GB play each other in that week. Otherwise, it will
+            set each team's score respectively and default their opponent's scores
+            to 0. Scores for bye teams in that week are ignored.
+        '''
 
         # sanity checks
         bogus = set(kwargs.keys()) - set(self.teams_.keys())
@@ -255,7 +280,6 @@ class NFL():
             elif wk < elem['wk']:
                 # assuming elements are sorted by week, we can stop at this point
                 break
-
 
     def games(self, teams=None, limit=None):
         ''' generator to iterate over score data
@@ -412,10 +436,14 @@ class NFL():
 
     def tiebreakers(self, teams, limit=None):
 
-        if NFL.scalar(teams):
-            teams = [teams]         # mostly for consistency
+        teams = self._teams(teams)
 
         df = pd.DataFrame(columns=pd.MultiIndex.from_product([teams, ['win','loss','tie', 'pct']], names=['team','outcome']))
+        divisions = set()
+
+        # determine which divisions are in the specified list. If more than one then adjust the tiebreaker order
+        for t in teams:
+            divisions.add(self.teams_[t]['div'])
 
         def set_frame(df, index, z):
             '''Assigns the index and columns of a data frame to a multi-indexed data frame with the same column levels.
@@ -434,13 +462,18 @@ class NFL():
         common_opponents = self.opponents(teams, limit=limit)
         scores = self.scores(teams, limit=limit)
 
+        # declare these rows in advance so they appear in the correct order
         set_frame(df, 'overall', self.wlt(teams, limit=limit))
         set_frame(df, 'head-to-head', self.wlt(teams, within=teams, limit=limit))
 
-        # declare these rows in advance so they appear in logical order
-        df.loc['division'] = np.nan
-        df.loc['common-games'] = np.nan
-        df.loc['conference'] = np.nan
+        if len(divisions) > 1:
+            df.loc['conference'] = np.nan
+            df.loc['common-games'] = np.nan
+        else:
+            df.loc['division'] = np.nan
+            df.loc['common-games'] = np.nan
+            df.loc['conference'] = np.nan
+        
         df.loc['victory-strength'] = np.nan
         df.loc['schedule-strength'] = np.nan
         df.loc['conference-rank'] = np.nan
@@ -451,7 +484,9 @@ class NFL():
         set_frame(df, 'common-games', self.wlt(teams, within=common_opponents, limit=limit))
 
         for t in teams:
-            df.loc['division', t] = list(self.wlt(t, within=self(t).division, limit=limit).T[t])
+            if 'division' in df.index:
+                df.loc['division', t] = list(self.wlt(t, within=self(t).division, limit=limit).T[t])
+
             df.loc['conference', t] = list(self.wlt(t, within=self(t).conference, limit=limit).T[t])
 
             df.loc['conference-rank', (t, 'pct')] = rankings.loc[t]['rank_conf']
