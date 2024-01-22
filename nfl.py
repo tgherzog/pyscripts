@@ -18,8 +18,19 @@ nfl.tiebreakers(['DAL', 'PHI'])  # tiebreaker calculations
 # and lots more, and yet lots of room for enhancements/improvements ;)
 
 Usage:
-  nfl.py FILE --update WEEK
-  nfl.py FILE --scores TEAM
+    nfl.py update FILE WEEK
+    nfl.py team TEAM [--file FILE]
+    nfl.py tiebreakers TEAMS... [--file FILE]
+
+Commands:
+    update          Update the database FILE, scraping data up to and including WEEK
+
+    team            Report TEAM stats and schedule (division or conference work too)
+
+    tiebreakers     Report tiebreaker analysis for the specified TEAMS
+
+Options:
+    --file FILE     Use FILE as database path [default: NFLData.xlsx]
 
 """
 
@@ -76,11 +87,11 @@ class NFLDivision():
 
         self.code = code
         self.host = host
-        self.members = host.divs_[code]
+        self.teams = host.divs_[code]
 
     def standings(self):
-        o = self.host.wlt(self.members)
-        d = self.host.wlt(self.members, within=self.members)
+        o = self.host.wlt(self.teams)
+        d = self.host.wlt(self.teams, within=self.teams)
         return pd.concat([o, d], keys=['overall', 'division'], axis=1)
 
     def __repr__(self):
@@ -92,12 +103,12 @@ class NFLConference():
 
         self.code = code
         self.host = host
-        self.members = host.confs_[code]
+        self.teams = host.confs_[code]
 
     def standings(self):
 
-        o = self.host.wlt(self.members)
-        c = self.host.wlt(self.members, within=self.members)
+        o = self.host.wlt(self.teams)
+        c = self.host.wlt(self.teams, within=self.teams)
         z = pd.concat([o, o, c], keys=['overall', 'division', 'conference'], axis=1)
 
         for elem in z.index:
@@ -118,6 +129,7 @@ class NFL():
         self.confs_  = {}
         self.games_  = []
         self.path   = None
+        self.max_week = 0
 
     def __call__(self, i):
 
@@ -142,6 +154,7 @@ class NFL():
         self.teams_ = {}
         self.divs_  = {}
         self.confs_ = {}
+        self.max_week = 0
 
         wb = openpyxl.load_workbook(path, read_only=True)
         for row in wb['Divisions']:
@@ -167,6 +180,9 @@ class NFL():
                 game = {'wk': row[0].value, 'at': row[1].value, 'as': row[2].value, 'ht': row[3].value, 'hs': row[4].value}
                 game['p'] = game['as'] is not None and game['hs'] is not None
                 self.games_.append(game)
+                self.max_week = max(self.max_week, game['wk'])
+
+        return self
 
 
     def reload(self):
@@ -175,6 +191,8 @@ class NFL():
 
         if self.path:
             self.load(self.path)
+
+        return self
 
     def update(self, path, week, year=None):
         ''' Updates the Scores sheet of the specified Excel file by scraping the URL shown in code.
@@ -242,6 +260,7 @@ class NFL():
                 ws.cell(row=row, column=c, value=None)
 
         wb.save(path)
+        return self
 
     def set(self, wk, **kwargs):
         ''' Set the final score(s) for games in a given week. You can use this to create
@@ -287,6 +306,9 @@ class NFL():
             elif wk < elem['wk']:
                 # assuming elements are sorted by week, we can stop at this point
                 break
+
+        return self
+
 
     def games(self, teams=None, limit=None, allGames=False):
         ''' generator to iterate over score data
@@ -347,11 +369,12 @@ class NFL():
     def schedule(self, which):
 
         if type(which) is int:
-            df = pd.DataFrame(columns=['home', 'visit', 'hscore', 'ascore'])
+            df = pd.DataFrame(columns=['ht', 'at', 'hscore', 'ascore'])
             for game in self.games(teams=None, limit=range(which,which+1), allGames=True):
                 df.loc[len(df)] = [game['ht'], game['at'], game['hs'], game['as']]
         else:
-            df = pd.DataFrame(columns=['op', 'home', 'score', 'op_score', 'wlt'])
+            # pre-populate the index so the schedule includes the bye week
+            df = pd.DataFrame(columns=['opp', 'at_home', 'score', 'opp_score', 'wlt'], index=range(1, self.max_week+1))
             df.index.name = 'week'
             for game in self.games(teams=which, allGames=True):
                 if game['ht'] == which:
@@ -582,110 +605,26 @@ class NFL():
         return [teams]
 
 
-def getrecord(teams,id,versus=None,withStrength=True):
-
-  record = {'overall': [0,0,0], 'div': [0,0,0], 'conf': [0,0,0], 'vs': [0,0,0], 'common': [0,0,0], 'victory': [0,0,0], 'schedule': [0,0,0]}
-
-  if teams.get(id) == None or teams[id].get('record') == None:
-    raise Exception('undefined team record: ' + id)
-
-  if versus != None and teams[versus]['record'] != None:
-    # find common opponents
-    common = set([t['op'] for t in teams[id]['record']]) & set([t['op'] for t in teams[versus]['record']])
-    record['common_opponents'] = ','.join(common)
-  else:
-    common = None
-
-  for op in teams[id]['record']:
-    win = loss = tie = 0
-    if op['us'] == '--' or op['them'] == '--':
-      continue
-
-    if op['us'] > op['them']:
-      win += 1
-    elif op['us'] < op['them']:
-      loss += 1
-    else:
-      tie += 1
-
-    record['overall'][0] += win
-    record['overall'][1] += loss
-    record['overall'][2] += tie
-
-    if teams[op['op']]['div'] == teams[id]['div']:
-      record['div'][0] += win
-      record['div'][1] += loss
-      record['div'][2] += tie
-    
-    if teams[op['op']]['conf'] == teams[id]['conf']:
-      record['conf'][0] += win
-      record['conf'][1] += loss
-      record['conf'][2] += tie
-
-    if op['op'] == versus:
-      record['vs'][0] += win
-      record['vs'][1] += loss
-      record['vs'][2] += tie
-    elif common != None and op['op'] in common:
-      record['common'][0] += win
-      record['common'][1] += loss
-      record['common'][2] += tie
-
-    if withStrength:
-      try:
-          t2 = getrecord(teams, op['op'], withStrength=False)
-
-          record['schedule'][0] += t2['overall'][0]
-          record['schedule'][1] += t2['overall'][1]
-          record['schedule'][2] += t2['overall'][2]
-
-          if win == 1:
-              record['victory'][0] += t2['overall'][0]
-              record['victory'][1] += t2['overall'][1]
-              record['victory'][2] += t2['overall'][2]
-
-      except:
-          if record.get('missing_records') == None:
-              record['missing_records'] = set([])
-
-          record['missing_records'].update([ op['op'] ])
-
-
-  return record
-
-def getpct(rec):
-
-  games = rec[0] + rec[1] + rec[2]
-  wins  = rec[0] + float(rec[2])/2
-  if games == 0:
-    return 0
-
-  return wins/games
-
-def getrec(rec):
-
-    if rec == None:
-        return '?-?-?'
-
-    return "%d-%d-%d" % (rec[0], rec[1], rec[2])
-
 if __name__ == '__main__':
     config = docopt(__doc__)
     # print(config)
     # sys.exit(0)
 
-    if config['--update']:
+    if config['update']:
         logging.basicConfig(level=logging.INFO)
 
         NFL().update(config['FILE'], week=int(config['WEEK']))
 
-    if config['--scores']:
-        df = pd.DataFrame(columns=['result', 'own_pts', 'op_pts', 'op', 'at_home'])
+    if config['team']:
         nfl = NFL()
-        nfl.load(config['FILE'])
-        for score in nfl.scores(config['TEAM'])[config['TEAM']]:
-            df.loc[score[5]] = [score[0], score[1], score[2], score[3], 'X' if score[4] else '']
+        nfl.load(config['--file'])
+        team = nfl(config['TEAM'])
+        print(team)
+        if type(team) is NFLTeam:
+            print(team.schedule)
 
-        print(df)
+    if config['tiebreakers']:
+        nfl = NFL()
+        print(nfl.load(config['--file']).tiebreakers(config['TEAMS']))
 
 
