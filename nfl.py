@@ -60,6 +60,13 @@ class NFLTeam():
         '''
         return self.host.confs_[self.conf]
 
+    @property
+    def schedule(self):
+        '''Return the team's schedule
+        '''
+
+        return self.host.schedule(self.code)
+
     def __repr__(self):
         s = '{}: {} ({})\n'.format(self.code, self.name, self.div)
         return s + self.host.team_stats(self.code).__repr__()
@@ -281,12 +288,12 @@ class NFL():
                 # assuming elements are sorted by week, we can stop at this point
                 break
 
-    def games(self, teams=None, limit=None):
+    def games(self, teams=None, limit=None, allGames=False):
         ''' generator to iterate over score data
 
-            teams:      code or list of teams to fetch
+            teams:      code or list-like of teams to fetch
 
-            limit:      range or list like of weeks to fetch. Integers are converted
+            limit:      range or list-like of weeks to fetch. Integers are converted
                         to the top limit of a range
 
             Example:
@@ -302,7 +309,7 @@ class NFL():
         for elem in self.games_:
             if limit is None or elem['wk'] in limit:
                 if teams is None or elem['at'] in teams or elem['ht'] in teams:
-                    if elem['p']:
+                    if elem['p'] or allGames:
                         yield elem
 
 
@@ -321,14 +328,6 @@ class NFL():
             week: week number
         '''
 
-        def result(us,them):
-            if us > them:
-                return 'win'
-            elif us < them:
-                return 'loss'
-
-            return 'tie'
-
         if teams is None:
             z = {i:[] for i in self.teams_.keys()}
         else:
@@ -337,13 +336,30 @@ class NFL():
 
         for game in self.games(teams, limit):
             if teams is None or game['at'] in teams:
-                z[game['at']].append([result(game['as'], game['hs']), game['as'], game['hs'], game['ht'], False, game['wk']])
+                z[game['at']].append([NFL.result(game['as'], game['hs']), game['as'], game['hs'], game['ht'], False, game['wk']])
 
             if teams is None or game['ht'] in teams:
-                z[game['ht']].append([result(game['hs'], game['as']), game['hs'], game['as'], game['at'], True, game['wk']])
+                z[game['ht']].append([NFL.result(game['hs'], game['as']), game['hs'], game['as'], game['at'], True, game['wk']])
 
         return z
 
+
+    def schedule(self, which):
+
+        if type(which) is int:
+            df = pd.DataFrame(columns=['home', 'visit', 'hscore', 'ascore'])
+            for game in self.games(teams=None, limit=range(which,which+1), allGames=True):
+                df.loc[len(df)] = [game['ht'], game['at'], game['hs'], game['as']]
+        else:
+            df = pd.DataFrame(columns=['op', 'home', 'score', 'op_score', 'wlt'])
+            df.index.name = 'week'
+            for game in self.games(teams=which, allGames=True):
+                if game['ht'] == which:
+                    df.loc[game['wk']] = [game['at'], 1, game['hs'], game['as'], NFL.result(game['hs'],game['as'])]
+                else:
+                    df.loc[game['wk']] = [game['ht'], 0, game['as'], game['hs'], NFL.result(game['as'], game['hs'])]
+
+        return df
 
     def opponents(self, teams, limit=None):
         ''' Returns the set of common opponents of one or more teams
@@ -530,6 +546,18 @@ class NFL():
         df.loc['victory-strength':'schedule-strength'] = s.T.values
 
         return df
+
+    @staticmethod
+    def result(a, b):
+        
+        if a is None or b is None:
+            return ''
+        elif a > b:
+            return 'win'
+        elif a < b:
+            return 'loss'
+
+        return 'tie'
 
     def _teams(self, teams):
         ''' Transforms teams into an array of actual team codes, or None
