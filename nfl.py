@@ -89,10 +89,26 @@ class NFLDivision():
         self.host = host
         self.teams = host.divs_[code]
 
-    def standings(self):
+    def standings(self, rank=False):
+        ''' Return division standings
+
+            rank: if True, add 'rank' column based on in-division tiebreaker rules (longer)
+                  if False, sort results by game wlt
+        '''
+
         o = self.host.wlt(self.teams)
         d = self.host.wlt(self.teams, within=self.teams)
-        return pd.concat([o, d], keys=['overall', 'division'], axis=1)
+        z = pd.concat([o, d], keys=['overall', 'division'], axis=1)
+
+        # use division tiebreakers to calculate precise division rank
+        if rank:
+            t = self.host.tiebreakers(self.teams, ascending=True).xs('pct', axis=1, level=1).transpose()
+            t = t.sort_values(list(t.columns), ascending=False)
+            t['div_rank'] = range(1, len(t)+1)
+            z[('division','rank')] = t['div_rank']
+            return z.sort_values(('division','rank'))
+
+        return z
 
     def __repr__(self):
         s = '{}\n'.format(self.code)
@@ -105,17 +121,28 @@ class NFLConference():
         self.host = host
         self.teams = host.confs_[code]
 
-    def standings(self):
+    @property
+    def divisions(self):
+        return set(map(lambda x: '-'.join([self.code, x]), ['North', 'East', 'South', 'West']))
 
-        o = self.host.wlt(self.teams)
-        c = self.host.wlt(self.teams, within=self.teams)
-        z = pd.concat([o, o, c], keys=['overall', 'division', 'conference'], axis=1)
 
-        for elem in z.index:
-            z.loc[elem, 'division'] = self.host.wlt(elem, within=self.host(elem).division).values
+    def standings(self, rank=False):
 
-        z['div'] = z.index.map(lambda x: self.host.teams_[x]['div'].split('-')[1])
-        return z.sort_values(['div', ('overall','pct')], ascending=[True,False])
+        c = None
+        for elem in self.divisions:
+            z = self.host(elem).standings(rank)
+            if type(c) is pd.DataFrame:
+                c = pd.concat([c, z])
+            else:
+                c = z
+
+        z = self.host.wlt(self.teams, within=self.teams)
+        c = pd.concat([c['overall'], c['division'], z], keys=['overall', 'division', 'conference'], axis=1)
+        c['div'] = c.index.map(lambda x: self.host.teams_[x]['div'].split('-')[1])
+        if rank:
+            return c.sort_values(['div', ('division','rank')])
+
+        return c.sort_values(['div',('overall','pct')], ascending=[True, False])
 
     def __repr__(self):
         s = '{}\n'.format(self.code)
@@ -165,14 +192,14 @@ class NFL():
                 div = '-'.join([conf, div])
                 self.teams_[team] = {'name': row[1].value, 'div': div, 'conf': conf}
                 if self.divs_.get(div) is None:
-                    self.divs_[div] = []
+                    self.divs_[div] = set()
 
-                self.divs_[div].append(team)
+                self.divs_[div].add(team)
 
                 if self.confs_.get(conf) is None:
-                    self.confs_[conf] = []
+                    self.confs_[conf] = set()
 
-                self.confs_[conf].append(team)
+                self.confs_[conf].add(team)
 
         for row in wb['Scores']:
             if row[0].row > 1 and row[0].value:
@@ -450,9 +477,11 @@ class NFL():
         return df
 
 
-    def point_rankings(self, limit=None):
+    def point_rankings(self, limit=None, ascending=False):
         ''' Return overall and conference rankings of points scored and points allowed. These
             are used in tiebreakers
+
+            ascending: if True, best-performing teams have the highest number rankings
         '''
         df = pd.DataFrame()
         for k,elem in self.teams_.items():
@@ -465,15 +494,29 @@ class NFL():
             df.loc[elem['ht'], ['pts_scored','pts_allowed']] += [elem['hs'], elem['as']]
             df.loc[elem['at'], ['pts_scored','pts_allowed']] += [elem['as'], elem['hs']]
 
-        df['rank_scored'] = df['pts_scored'].rank(ascending=False)
-        df['rank_allowed'] = df['pts_allowed'].rank()
-        df['rank_overall'] = (df['rank_scored'] + df['rank_allowed']).rank()
-        df['rank_conf'] = df.groupby('conf')['rank_overall'].rank()
+        df['rank_scored'] = df['pts_scored'].rank(ascending=ascending)
+        df['rank_allowed'] = df['pts_allowed'].rank(ascending=not ascending)
+        df['rank_overall'] = (df['rank_scored'] + df['rank_allowed']).rank(ascending=True)
+        df['rank_conf'] = df.groupby('conf')['rank_overall'].rank(ascending=True)
 
         return df
 
 
-    def tiebreakers(self, teams, limit=None):
+    def tiebreakers(self, teams, limit=None, ascending=False):
+        '''Return tiebreaker analysis for specified teams
+
+        Each row in the returned dataframe is the results of a step in the NFL's tiebreaker procedure
+        currently defined here: https://www.nfl.com/standings/tie-breaking-procedures
+
+        Rows are in order of precedence and depend on whether the teams are in the same division or not
+
+        If ascending is True, "best combined rankings" mean that higher values are better, which enables
+        sorting like this:
+
+        z = nfl.tiebreakers(nfl('NFC-North').teams, ascending=True)
+        z = z.xs('pct', level=1, axis=1).transpose()
+        z.sort_values(list(z.columns))     # lowest to highest
+        '''
 
         teams = self._teams(teams)
 
@@ -497,7 +540,7 @@ class NFL():
 
             df.loc[index] = pd.Series(z.values.flatten(), index=pd.MultiIndex.from_product([z.index, z.columns]))
 
-        rankings = self.point_rankings(limit)
+        rankings = self.point_rankings(limit=limit, ascending=ascending)
         common_opponents = self.opponents(teams, limit=limit)
         scores = self.scores(teams, limit=limit)
 
