@@ -79,8 +79,9 @@ class NFLTeam():
         return self.host.schedule(self.code)
 
     def __repr__(self):
-        s = '{}: {} ({})\n'.format(self.code, self.name, self.div)
-        return s + self.host.team_stats(self.code).__repr__()
+        z = self.host._stats().loc[self.code][['overall','division','conference']].unstack()
+        return '{}: {} ({})\n'.format(self.code, self.name, self.div) + z.__repr__()
+
 
 class NFLDivision():
     def __init__(self, code, host):
@@ -111,8 +112,9 @@ class NFLDivision():
         return z
 
     def __repr__(self):
-        s = '{}\n'.format(self.code)
-        return s + self.standings().__repr__()
+        z = self.host._stats()
+        z = z[z['div']==self.code][['overall','division']]
+        return '{}\n'.format(self.code) + z.__repr__()
 
 class NFLConference():
     def __init__(self, code, host):
@@ -145,8 +147,8 @@ class NFLConference():
         return c.sort_values(['div',('overall','pct')], ascending=[True, False])
 
     def __repr__(self):
-        s = '{}\n'.format(self.code)
-        return s + self.standings().__repr__()
+        z = self.host._stats()
+        return '{}\n'.format(self.code) + z[z['conf']==self.code][['div', 'overall', 'division', 'conference']].__repr__()
 
 class NFL():
 
@@ -157,6 +159,7 @@ class NFL():
         self.games_  = []
         self.path   = None
         self.max_week = 0
+        self.stats = pd.DataFrame()
 
     def __call__(self, i):
 
@@ -181,7 +184,7 @@ class NFL():
         self.teams_ = {}
         self.divs_  = {}
         self.confs_ = {}
-        self.max_week = 0
+        self.max_week = 0                  
 
         wb = openpyxl.load_workbook(path, read_only=True)
         for row in wb['Divisions']:
@@ -201,6 +204,7 @@ class NFL():
 
                 self.confs_[conf].add(team)
 
+
         for row in wb['Scores']:
             if row[0].row > 1 and row[0].value:
                 # at/ht = away team/home team - same for scores
@@ -209,7 +213,49 @@ class NFL():
                 self.games_.append(game)
                 self.max_week = max(self.max_week, game['wk'])
 
+        self.stats = None
         return self
+
+    def _stats(self):
+
+        if self.stats is not None:
+            return self.stats
+
+        stat_cols = [('name',''),('div',''),('conf','')]
+        stat_cols += list(pd.MultiIndex.from_product([['overall','division','conference'],['win','loss','tie','pct']]))
+        self.stats = pd.DataFrame(columns=pd.MultiIndex.from_tuples(stat_cols))
+
+        def tally(hcode, acode, hscore, ascore, cat):
+
+            if hscore > ascore:
+                self.stats.loc[hcode, (cat,'win')] += 1
+                self.stats.loc[acode, (cat,'loss')] += 1
+            elif hscore < ascore:
+                self.stats.loc[hcode, (cat,'loss')] += 1
+                self.stats.loc[acode, (cat,'win')] += 1
+            elif hscore == ascore:
+                self.stats.loc[hcode, (cat,'tie')] += 1
+                self.stats.loc[acode, (cat,'tie')] += 1
+
+        for k,team in self.teams_.items():
+            self.stats.loc[k, ['name', 'div', 'conf']] = (team['name'], team['div'], team['conf'])
+            self.stats.loc[k, ['overall','division','conference']] = 0
+
+
+        for game in self.games_:
+            if game['p']:
+                tally(game['ht'], game['at'], game['hs'], game['as'], 'overall')
+                if self.teams_[game['ht']]['div'] == self.teams_[game['at']]['div']:
+                    tally(game['ht'], game['at'], game['hs'], game['as'], 'division')
+                    tally(game['ht'], game['at'], game['hs'], game['as'], 'conference')
+                elif self.teams_[game['ht']]['conf'] == self.teams_[game['at']]['conf']:
+                    tally(game['ht'], game['at'], game['hs'], game['as'], 'conference')
+
+        for i in ['overall','division','conference']:
+            self.stats[(i,'pct')] = (self.stats[(i,'win')] + self.stats[(i,'tie')]*0.5) / self.stats[i].sum(axis=1)
+
+        self.stats.sort_values(['div',('overall','pct')], ascending=(True,False), inplace=True)
+        return self.stats
 
 
     def reload(self):
@@ -334,6 +380,7 @@ class NFL():
                 # assuming elements are sorted by week, we can stop at this point
                 break
 
+        self.stats = None # signal to rebuild stats
         return self
 
 
