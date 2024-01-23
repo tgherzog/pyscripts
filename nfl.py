@@ -79,8 +79,7 @@ class NFLTeam():
         return self.host.schedule(self.code)
 
     def __repr__(self):
-        z = self.host._stats().loc[self.code][['overall','division','conference']].unstack()
-        return '{}: {} ({})\n'.format(self.code, self.name, self.div) + z.__repr__()
+        return '{}: {} ({})\n'.format(self.code, self.name, self.div) + self.host.team_stats(self.code).__repr__()
 
 
 class NFLDivision():
@@ -416,6 +415,23 @@ class NFL():
         self.stats = None # signal to rebuild stats
         return self
 
+    def clear(week, teams=None):
+        '''Clear scores for a given week or weeks
+
+        week:   can be an integer, range or list-like. Pass None to clear all (for whatever reason)
+        '''
+
+        if type(week) is int:
+            week = [week]
+
+        for elem in self.games_:
+            if week is None or elem['wk'] in week:
+                elem['p'] = False
+                elem['hs'] = elem['as'] = None
+
+        self.stats = None
+        return self
+
 
     def games(self, teams=None, limit=None, allGames=False):
         ''' generator to iterate over score data
@@ -523,111 +539,77 @@ class NFL():
         return z
 
 
-    def wlt(self, teams=None, within=None, limit=None):
+    def wlt(self, teams=None, within=None, limit=None, points=False):
         ''' Return the wlt stats of one or more teams
 
             teams:  team code or list of team codes
 
             within: list of team codes that defines the wlt universe
+
+            points: include points scored and allowed
         '''
 
         teams = self._teams(teams)
 
-        df = pd.DataFrame(columns=['win','loss','tie'])
+        cols = ['win','loss','tie', 'pct']
+        if points:
+            cols += ['scored','allowed']
+        df = pd.DataFrame(columns=cols)
         df.columns.name = 'outcome'
         df.index.name = 'team'
         for t,scores in self.scores(teams, limit).items():
-            df.loc[t] = [0, 0, 0]
+            df.loc[t] = 0
             for score in scores:
                 if within is None or score[3] in within:
                     df.loc[t, score[0]] += 1
+                    if 'scored' in df:
+                        df.loc[t, 'scored'] += score[1]
 
-        df['pct'] = (df['win'] + df['tie'] * 0.5) / df.T.sum()
+                    if 'allowed' in df:
+                        df.loc[t, 'allowed'] += score[2]
+
+        df['pct'] = (df['win'] + df['tie'] * 0.5) / df.drop(columns=['scored','allowed'], errors='ignore').sum(axis=1)
         return df.sort_values('pct', ascending=False)
 
-    def team_stats(self, team, limit=None):
-
-        df = pd.concat([
-            self.wlt(team, limit=limit).rename(index={team: 'overall'}),
-            self.wlt(team, within=self(team).division, limit=limit).rename(index={team: 'division'}),
-            self.wlt(team, within=self(team).conference, limit=limit).rename(index={team: 'conference'})
-        ])
-
-        df.index.name = None
-        return df
-
-
-    def point_rankings(self, limit=None, ascending=False):
-        ''' Return overall and conference rankings of points scored and points allowed. These
-            are used in tiebreakers
-
-            ascending: if True, best-performing teams have the highest number rankings
+    def team_stats(self, team):
+        '''Return stats for a single team
         '''
-        df = pd.DataFrame()
-        for k,elem in self.teams_.items():
-            df.loc[k, 'conf'] = elem['conf']
 
-        df['pts_scored'] = 0
-        df['pts_allowed'] = 0
-
-        for elem in self.games(limit):
-            df.loc[elem['ht'], ['pts_scored','pts_allowed']] += [elem['hs'], elem['as']]
-            df.loc[elem['at'], ['pts_scored','pts_allowed']] += [elem['as'], elem['hs']]
-
-        df['rank_scored'] = df['pts_scored'].rank(ascending=ascending)
-        df['rank_allowed'] = df['pts_allowed'].rank(ascending=not ascending)
-        df['rank_overall'] = (df['rank_scored'] + df['rank_allowed']).rank(ascending=True)
-        df['rank_conf'] = df.groupby('conf')['rank_overall'].rank(ascending=True)
-
-        return df
+        return self._stats().loc[team][['overall','division','conference']].unstack()
 
 
-    def tiebreakers(self, teams, limit=None, ascending=False):
-        '''Return tiebreaker analysis for specified teams
+    def tiebreakers(self, teams):
+       '''Return tiebreaker analysis for specified teams
 
         Each row in the returned dataframe is the results of a step in the NFL's tiebreaker procedure
         currently defined here: https://www.nfl.com/standings/tie-breaking-procedures
 
         Rows are in order of precedence and depend on whether the teams are in the same division or not
 
-        If ascending is True, "best combined rankings" mean that higher values are better, which enables
-        sorting like this:
+        rank (conference or overall) statistics are always in increasing order, e.g. 1 is the worst
+        ranked team
 
-        z = nfl.tiebreakers(nfl('NFC-North').teams, ascending=True)
-        z = z.xs('pct', level=1, axis=1).transpose()
-        z.sort_values(list(z.columns))     # lowest to highest
+        Example:
+
+        z = nfl.tiebreakers(nfl('NFC-North').teams)
+
+        # sort division according to tiebreaker rules, highest ranked team in column 1
+        z = z.xs('pct', level=1, axis=1).sort_values(list(z.index), axis=1, ascending=False)
         '''
 
         teams = self._teams(teams)
-
         df = pd.DataFrame(columns=pd.MultiIndex.from_product([teams, ['win','loss','tie', 'pct']], names=['team','outcome']))
+        common_opponents = self.opponents(teams)
         divisions = set()
+        stats = self._stats()
 
         # determine which divisions are in the specified list. If more than one then adjust the tiebreaker order
         for t in teams:
             divisions.add(self.teams_[t]['div'])
 
-        def set_frame(df, index, z):
-            '''Assigns the index and columns of a data frame to a multi-indexed data frame with the same column levels.
-               There might be a simpler way to do this, but this works okay
-
-               df:      the target dataframe
-
-               index:   index for assignment
-
-               z:       source dataframe. z.index should equal df.columns[0] and z.columns should equal df.columns[1]
-            '''
-
-            df.loc[index] = pd.Series(z.values.flatten(), index=pd.MultiIndex.from_product([z.index, z.columns]))
-
-        rankings = self.point_rankings(limit=limit, ascending=ascending)
-        common_opponents = self.opponents(teams, limit=limit)
-        scores = self.scores(teams, limit=limit)
-
-        # declare these rows in advance so they appear in the correct order
-        set_frame(df, 'overall', self.wlt(teams, limit=limit))
-        set_frame(df, 'head-to-head', self.wlt(teams, within=teams, limit=limit))
-
+        # set rules to default values here so they appear in the correct order
+        df.loc['overall'] = np.nan
+        df.loc['head-to-head'] = np.nan
         if len(divisions) > 1:
             df.loc['conference'] = np.nan
             df.loc['common-games'] = np.nan
@@ -640,56 +622,26 @@ class NFL():
         df.loc['schedule-strength'] = np.nan
         df.loc['conference-rank'] = np.nan
         df.loc['overall-rank'] = np.nan
-        df.loc['points-common-games'] = np.nan
-        df.loc['points-overall'] = np.nan
+        df.loc['common-netpoints'] = np.nan
+        df.loc['overall-netpoints'] = np.nan
 
-        set_frame(df, 'common-games', self.wlt(teams, within=common_opponents, limit=limit))
+        h2h = self.wlt(teams, within=teams)
+        co  = self.wlt(teams, within=common_opponents, points=True)
 
-        for t in teams:
+        for team in teams:
+            df.loc['overall', team] = stats.loc[team,'overall'].values
+            df.loc['head-to-head', team] = h2h.loc[team].values
+            df.loc['common-games', team] = co.loc[team].drop(['scored','allowed']).values
+            df.loc['conference', team] = stats.loc[team,'conference'].values
+            df.loc['victory-strength', team] = stats.loc[team,'vic_stren'].values
+            df.loc['schedule-strength', team] = stats.loc[team,'sch_stren'].values
             if 'division' in df.index:
-                df.loc['division', t] = list(self.wlt(t, within=self(t).division, limit=limit).T[t])
+                df.loc['division', team] = stats.loc[team,'division'].values
 
-            df.loc['conference', t] = list(self.wlt(t, within=self(t).conference, limit=limit).T[t])
-
-            df.loc['conference-rank', (t, 'pct')] = rankings.loc[t]['rank_conf']
-            df.loc['overall-rank', (t, 'pct')] = rankings.loc[t]['rank_overall']
-
-            df.loc['victory-strength', t] = 0
-            df.loc['schedule-strength', t] = 0
-
-            sched_wlt = self.wlt(self.opponents(t, limit=limit))
-
-            pts_common_games = pts_overall = 0
-
-            # See https://stackoverflow.com/questions/28431519/pandas-multiindex-assignment-from-another-dataframe
-            # for why the syntax below is so convoluted
-            for score in scores[t]:
-                pts_overall += score[1]
-                if score[3] in common_opponents:
-                    pts_common_games += score[1]
-
-                df.loc['schedule-strength', t] = (df.loc['schedule-strength', t] + sched_wlt.loc[score[3]]).values
-                if score[0] == 'win':
-                    df.loc['victory-strength', t] = (df.loc['victory-strength', t] + sched_wlt.loc[score[3]]).values
-
-            df.loc['points-common-games', (t, 'pct')] = pts_common_games
-            df.loc['points-overall', (t, 'pct')] = pts_overall
-
-
-        # recalulcate the pct's we summed above
-        # NB: pandas is not entirely consistent concerning when .loc returns a view or a copy
-        # See https://stackoverflow.com/questions/26879073/checking-whether-data-frame-is-copy-or-view-in-pandas
-        # for more information (and how to tell when it's a view or a copy)
-        # The code below assumes .loc returns a copy even though the slice operator returns
-        # a view at the time this code was written
-
-        s = df.loc['victory-strength':'schedule-strength'].T
-
-        s.loc(axis=0)[:,'pct'] = 0          # so the formula below doesn't factor in the old pct
-        s.loc(axis=0)[:,'pct'] = ((s.xs('win',level=1) + s.xs('tie',level=1)*0.5) / s.groupby(level=0).sum()).values
-
-        # copy back: see note above
-        df.loc['victory-strength':'schedule-strength'] = s.T.values
+            df.loc['conference-rank', (team,'pct')] = stats.loc[team, ('misc', 'rank-conf')]
+            df.loc['overall-rank', (team,'pct')] = stats.loc[team, ('misc', 'rank-overall')]
+            df.loc['common-netpoints', (team,'pct')] = co.loc[team, 'scored'] - co.loc[team, 'allowed']
+            df.loc['overall-netpoints', (team,'pct')] = stats.loc[team, ('misc', 'pts-scored')] - stats.loc[team, ('misc', 'pts-allowed')]
 
         return df
 
