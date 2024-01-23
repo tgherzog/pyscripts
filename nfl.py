@@ -222,39 +222,72 @@ class NFL():
             return self.stats
 
         stat_cols = [('name',''),('div',''),('conf','')]
-        stat_cols += list(pd.MultiIndex.from_product([['overall','division','conference'],['win','loss','tie','pct']]))
-        self.stats = pd.DataFrame(columns=pd.MultiIndex.from_tuples(stat_cols))
+        stat_cols += list(pd.MultiIndex.from_product([['overall','division','conference', 'vic_stren', 'sch_stren'],['win','loss','tie','pct']]))
+        stat_cols += list(pd.MultiIndex.from_product([['misc'],['rank-conf','rank-overall', 'pts-scored', 'pts-allowed']]))
+        stats = pd.DataFrame(columns=pd.MultiIndex.from_tuples(stat_cols))
+
+        sched = {k:[] for k in self.teams_.keys()}
 
         def tally(hcode, acode, hscore, ascore, cat):
 
             if hscore > ascore:
-                self.stats.loc[hcode, (cat,'win')] += 1
-                self.stats.loc[acode, (cat,'loss')] += 1
+                stats.loc[hcode, (cat,'win')] += 1
+                stats.loc[acode, (cat,'loss')] += 1
+                if cat == 'overall':
+                    sched[hcode] += [(acode,1)]
+                    sched[acode] += [(hcode,0)]
             elif hscore < ascore:
-                self.stats.loc[hcode, (cat,'loss')] += 1
-                self.stats.loc[acode, (cat,'win')] += 1
+                stats.loc[hcode, (cat,'loss')] += 1
+                stats.loc[acode, (cat,'win')] += 1
+                if cat == 'overall':
+                    sched[hcode] += [(acode,0)]
+                    sched[acode] += [(hcode,1)]
             elif hscore == ascore:
-                self.stats.loc[hcode, (cat,'tie')] += 1
-                self.stats.loc[acode, (cat,'tie')] += 1
+                stats.loc[hcode, (cat,'tie')] += 1
+                stats.loc[acode, (cat,'tie')] += 1
+                if cat == 'overall':
+                    sched[hcode] += [(acode,0)]
+                    sched[acode] += [(hcode,0)]                   
 
         for k,team in self.teams_.items():
-            self.stats.loc[k, ['name', 'div', 'conf']] = (team['name'], team['div'], team['conf'])
-            self.stats.loc[k, ['overall','division','conference']] = 0
-
+            stats.loc[k, ['name', 'div', 'conf']] = (team['name'], team['div'], team['conf'])
+            stats.loc[k, ['overall','division','conference', 'vic_stren', 'sch_stren', 'misc']] = 0
 
         for game in self.games_:
             if game['p']:
                 tally(game['ht'], game['at'], game['hs'], game['as'], 'overall')
+                stats.loc[game['ht'], ('misc', 'pts-scored')] += game['hs']
+                stats.loc[game['at'], ('misc', 'pts-scored')] += game['as']
+                stats.loc[game['ht'], ('misc', 'pts-allowed')] += game['as']
+                stats.loc[game['at'], ('misc', 'pts-allowed')] += game['hs']
+
                 if self.teams_[game['ht']]['div'] == self.teams_[game['at']]['div']:
                     tally(game['ht'], game['at'], game['hs'], game['as'], 'division')
                     tally(game['ht'], game['at'], game['hs'], game['as'], 'conference')
                 elif self.teams_[game['ht']]['conf'] == self.teams_[game['at']]['conf']:
                     tally(game['ht'], game['at'], game['hs'], game['as'], 'conference')
 
-        for i in ['overall','division','conference']:
-            self.stats[(i,'pct')] = (self.stats[(i,'win')] + self.stats[(i,'tie')]*0.5) / self.stats[i].sum(axis=1)
+        # strength of victory/schedule
+        for (k,row) in stats.iterrows():
+            for (op,win) in sched[k]:
+                stats.loc[k, 'sch_stren'] = (stats.loc[k, 'sch_stren'] + stats.loc[op, 'overall']).values
+                if win == 1:
+                    stats.loc[k, 'vic_stren'] = (stats.loc[k, 'vic_stren'] + stats.loc[op, 'overall']).values
 
-        self.stats.sort_values(['div',('overall','pct')], ascending=(True,False), inplace=True)
+        # temporary table for calculating ranks - easier syntax
+        t = pd.concat([stats['conf'], stats['misc'][['pts-scored','pts-allowed']]], axis=1)
+        stats[('misc','rank-overall')] = (t['pts-scored'].rank() + t['pts-allowed'].rank(ascending=False)).rank()
+
+        t['conf-off-rank'] = t.groupby('conf')['pts-scored'].rank()
+        t['conf-def-rank'] = t.groupby('conf')['pts-allowed'].rank(ascending=False)
+        t['conf-rank'] = t['conf-off-rank'] + t['conf-def-rank']
+        stats[('misc', 'rank-conf')] = t.groupby('conf')['conf-rank'].rank()
+
+        for i in ['overall','division','conference', 'sch_stren', 'vic_stren']:
+            stats[(i,'pct')] = (stats[(i,'win')] + stats[(i,'tie')]*0.5) / stats[i].sum(axis=1)
+
+        stats.sort_values(['div',('overall','pct')], ascending=(True,False), inplace=True)
+        self.stats = stats
         return self.stats
 
 
